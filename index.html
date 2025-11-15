@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BattleStorm3D Final Prototype</title>
+<style>
+body{margin:0;overflow:hidden;background:#87CEEB;font-family:sans-serif;}
+#hud{position:absolute;top:10px;left:10px;color:white;z-index:100; font-size:14px;}
+button{margin:3px;padding:5px;font-size:12px;}
+#damageFlash{position:absolute;top:0;left:0;width:100%;height:100%;background:red;opacity:0;pointer-events:none;z-index:200;}
+#hitMarker{position:absolute;top:50%;left:50%;width:20px;height:20px;border:2px solid red;border-radius:50%;transform:translate(-50%,-50%);opacity:0;z-index:200;}
+#leaderboard{position:absolute;top:10px;right:10px;color:white;z-index:100;font-size:14px;background:rgba(0,0,0,0.5);padding:5px;}
+</style>
+</head>
+<body>
+<div id="hud">
+Coins: <span id="coins">0</span> | Diamonds: <span id="diamonds">0</span> | Health: <span id="hp">100</span> | Points: <span id="points">0</span> | Ammo: <span id="ammo">30</span> | Gun: <span id="gun">Pistol</span><br>
+<button onclick="buySkin()">Golden Skin 200 Coins</button>
+<button onclick="buySkinDiamond()">Diamond Skin 20 Diamonds</button>
+<button onclick="topUp(100)">Top-Up 100 Coins</button>
+<button onclick="switchGun()">Switch Gun</button>
+<button onclick="deployGlooWall()">Deploy Gloo Wall</button>
+<button onclick="enterVehicle()">Enter Vehicle</button>
+<button onclick="jumpParachute()">Parachute Jump</button>
+<button onclick="throwGrenade()">Throw Grenade</button>
+<button onclick="toggleScope()">Aim Scope</button>
+</div>
+<div id="leaderboard"><b>Leaderboard</b><br><ol id="leaderboardList"></ol></div>
+<div id="damageFlash"></div>
+<div id="hitMarker"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+<script>
+
+// ===== Game Variables =====
+let player = {hp:100,coins:500,diamonds:0,points:0,ammo:30,skin:'Default',gun:'Pistol',inVehicle:false,scope:false};
+let enemies = [];
+let lootItems = [];
+let glooWalls = [];
+let vehicles = [];
+let parachuteActive=false;
+let grenades = [];
+let leaderboard = [];
+
+// ===== HUD =====
+function updateHUD(){
+    document.getElementById('coins').innerText = player.coins;
+    document.getElementById('diamonds').innerText = player.diamonds;
+    document.getElementById('points').innerText = player.points;
+    document.getElementById('hp').innerText = Math.floor(player.hp);
+    document.getElementById('ammo').innerText = player.ammo;
+    document.getElementById('gun').innerText = player.gun;
+    updateLeaderboard();
+}
+updateHUD();
+
+// ===== Leaderboard =====
+function updateLeaderboard(){
+    leaderboard = enemies.map(e=>({name:e.id,points:e.points}));
+    leaderboard.push({name:'You',points:player.points});
+    leaderboard.sort((a,b)=>b.points-a.points);
+    let list = document.getElementById('leaderboardList');
+    list.innerHTML='';
+    leaderboard.slice(0,5).forEach(p=>{let li=document.createElement('li');li.innerText=p.name+': '+p.points;list.appendChild(li);});
+}
+
+// ===== Skin & Top-Up =====
+function buySkin(){ if(player.coins>=200){ player.coins-=200; player.skin='Golden'; alert("Skin equipped!"); updateHUD(); } else alert("Not enough coins"); }
+function buySkinDiamond(){ if(player.diamonds>=20){ player.diamonds-=20; player.skin='Diamond'; alert("Skin equipped!"); updateHUD(); } else alert("Not enough diamonds"); }
+function topUp(amount){ player.coins+=amount; alert("Top-Up success! Coins added."); updateHUD(); }
+
+// ===== Gun Switching =====
+function switchGun(){ if(player.gun==='Pistol'){ player.gun='Rifle'; player.ammo=60; } else { player.gun='Pistol'; player.ammo=30; } updateHUD(); }
+
+// ===== Gloo Wall =====
+function deployGlooWall(){ let wall = new THREE.Mesh(new THREE.BoxGeometry(3,3,0.2), new THREE.MeshStandardMaterial({color:0x888888})); wall.position.set(playerMesh.position.x,1.5,playerMesh.position.z-2); scene.add(wall); glooWalls.push(wall); }
+
+// ===== Vehicle =====
+function enterVehicle(){ if(!player.inVehicle){ let vehicle = new THREE.Mesh(new THREE.BoxGeometry(2,1,4), new THREE.MeshStandardMaterial({color:0x0000ff})); vehicle.position.set(playerMesh.position.x,0.5,playerMesh.position.z); scene.add(vehicle); vehicles.push(vehicle); player.inVehicle=true; vehicleMesh=vehicle; alert("Entered vehicle! Use WASD to move faster."); }}
+
+// ===== Parachute =====
+function jumpParachute(){ if(!parachuteActive){ playerMesh.position.y=30; parachuteActive=true; alert("Parachute deployed!"); }}
+
+// ===== Scope Aim =====
+function toggleScope(){ player.scope=!player.scope; camera.fov=player.scope?30:75; camera.updateProjectionMatrix(); }
+
+// ===== Grenades =====
+function throwGrenade(){ if(player.ammo<=0) return; player.ammo--; let grenade = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshStandardMaterial({color:0xffa500})); grenade.position.set(playerMesh.position.x,1,playerMesh.position.z-1); scene.add(grenade); grenades.push({mesh:grenade,life:100}); updateHUD(); }
+
+// ===== Three.js Setup =====
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(window.innerWidth,window.innerHeight); document.body.appendChild(renderer.domElement);
+const light=new THREE.DirectionalLight(0xffffff,1); light.position.set(10,50,10); scene.add(light);
+
+// Map
+const mapMesh=new THREE.Mesh(new THREE.PlaneGeometry(200,200), new THREE.MeshStandardMaterial({color:0x228B22})); mapMesh.rotation.x=-Math.PI/2; scene.add(mapMesh);
+
+// Player
+const playerMesh=new THREE.Mesh(new THREE.BoxGeometry(1,2,1), new THREE.MeshStandardMaterial({color:0x00ff00})); playerMesh.position.y=1; scene.add(playerMesh);
+camera.position.set(0,10,15); camera.lookAt(playerMesh.position);
+
+// ===== Enemy Generation =====
+function spawnEnemies(n){
+    for(let i=0;i<n;i++){
+        let eMesh=new THREE.Mesh(new THREE.BoxGeometry(1,2,1), new THREE.MeshStandardMaterial({color:0xff0000}));
+        eMesh.position.set((Math.random()-0.5)*180,1,(Math.random()-0.5)*180);
+        scene.add(eMesh);
+        enemies.push({id:'E'+i,mesh:eMesh,hp:50,points:0});
+    }
+}
+spawnEnemies(7);
+
+// ===== Loot =====
+function spawnLoot(n){
+    for(let i=0;i<n;i++){
+        let lootMesh=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), new THREE.MeshStandardMaterial({color:0xffff00}));
+        lootMesh.position.set((Math.random()-0.5)*180,0.25,(Math.random()-0.5)*180);
+        scene.add(lootMesh); lootItems.push(lootMesh);
+    }
+}
+spawnLoot(15);
+
+// ===== Movement =====
+document.addEventListener('keydown', e=>{
+    let speed=player.scope?0.2:player.inVehicle?1.2:0.5; if(parachuteActive) speed=0.2;
+    if(e.key==='w') playerMesh.position.z-=speed;
+    if(e.key==='s') playerMesh.position.z+=speed;
+    if(e.key==='a') playerMesh.position.x-=speed;
+    if(e.key==='d') playerMesh.position.x+=speed;
+});
+
+// ===== Shooting =====
+document.addEventListener('click', ()=>{
+    if(player.ammo<=0) return; player.ammo--; updateHUD(); let hit=false;
+    enemies.forEach(e=>{
+        let dist=playerMesh.position.distanceTo(e.mesh.position);
+        if(dist<5){ let dmg=player.gun==='Pistol'?20:40; e.hp-=dmg; e.points+=dmg; showDamage(); showHitMarker(); hit=true;
+            if(e.hp<=0){ scene.remove(e.mesh); enemies=enemies.filter(enm=>enm!=e); player.points+=50; player.coins+=20; updateHUD(); } }
+    });
+});
+
+// ===== Damage Flash =====
+function showDamage(){ const flash=document.getElementById('damageFlash'); flash.style.opacity=0.7; setTimeout(()=>{flash.style.opacity=0;},100);}
+function showHitMarker(){ const marker=document.getElementById('hitMarker'); marker.style.opacity=1; setTimeout(()=>{marker.style.opacity=0;},150);}
+
+// ===== Loot Collection =====
+function checkLoot(){ lootItems.forEach(l=>{ if(playerMesh.position.distanceTo(l.position)<2){ scene.remove(l); lootItems=lootItems.filter(li=>li!=l); player.points+=10; player.coins+=5; player.diamonds+=1; updateHUD(); } });}
+
+// ===== Animate =====
+function animate(){
+    requestAnimationFrame(animate); checkLoot();
+    enemies.forEach(e=>{ let dx=playerMesh.position.x-e.mesh.position.x; let dz=playerMesh.position.z-e.mesh.position.z; let dist=Math.sqrt(dx*dx+dz*dz);
+        if(dist>1){ e.mesh.position.x+=dx/dist*0.02; e.mesh.position.z+=dz/dist*0.02; }
+        if(dist<1.5){ player.hp-=0.1; showDamage(); if(player.hp<=0){ alert("You died!"); player.hp=100; updateHUD(); } }
+    });
+    grenades.forEach((g)=>{ g.mesh.position.y+=0.05; g.life--; if(g.life<0){ enemies.forEach(e=>{ if(g.mesh.position.distanceTo(e.mesh.position)<5){ e.hp-=50; e.points+=50; if(e.hp<=0){ scene.remove(e.mesh); enemies=enemies.filter(enm=>enm!=e); player.points+=50; player.coins+=20; updateHUD(); } } }); scene.remove(g.mesh); grenades=grenades.filter(gr=>gr!=g); } });
+    if(player.inVehicle && typeof vehicleMesh!=='undefined'){ vehicleMesh.position.x=playerMesh.position.x; vehicleMesh.position.z=playerMesh.position.z; vehicleMesh.position.y=0.5; }
+    if(parachuteActive){ if(playerMesh.position.y>1) playerMesh.position.y-=0.1; else parachuteActive=false; }
+    renderer.render(scene,camera); updateLeaderboard();
+}
+animate();
+
+</script>
+</body>
+</html>
